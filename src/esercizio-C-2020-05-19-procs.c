@@ -11,17 +11,13 @@
 #include <pthread.h>
 #include <errno.h>
 
-
-
 void child_process();
-
 
 #define N 10
 
 int * countdown;
 int * shutdown;
 int * process_counter;
-
 
 sem_t * semaphore;
 
@@ -41,20 +37,17 @@ int main(void) {
 	}
 	*shutdown = 0;
 
-
 	process_counter = calloc(N, sizeof(int));
 	if(process_counter == NULL){
 		perror("calloc()");
 		exit(1);
 	}
 
-
 	process_counter = mmap(process_counter, sizeof(int), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1 ,0);
 	if (process_counter == MAP_FAILED) {
 		perror("mmap()");
 		exit(EXIT_FAILURE);
 	}
-
 
 	semaphore = mmap(NULL, // NULL: è il kernel a scegliere l'indirizzo
 			sizeof(sem_t), // dimensione della memory map
@@ -75,7 +68,6 @@ int main(void) {
 		exit(1);
 	}
 
-
 	// create N children
 	for (int i = 0; i < N; i++) {
 		switch (fork()) {
@@ -88,35 +80,34 @@ int main(void) {
 		}
 	}
 
-  // dopo avere avviato i processi figli, il processo padre dorme 1 secondo
-  int sec = 1;
-  printf("wait %d second\n", sec);
-  sleep(sec);
-  *countdown = 100000;
-  printf("countdown set to: %d\n", *countdown);
+	// dopo avere avviato i processi figli, il processo padre dorme 1 secondo
+	int sec = 1;
+	printf("wait %d second\n", sec);
+	sleep(sec);
+	*countdown = 100000;
+	printf("countdown set to: %d\n", *countdown);
 
-  while(1){
+	while(1){
 		if( *countdown == 0){
 			*shutdown = 1;
 			break;
 		}
-  }
+	}
 
-  // wait N children
-  for(int i=0 ; i<N ; i++){
+	// wait N children
+	for(int i=0 ; i<N ; i++){
 	  wait(NULL);
-  }
+	}
 
-  printf("countdown at the end: %d\n", *countdown);
+	printf("countdown at the end: %d\n", *countdown);
 
-  for(int i=0 ; i<N ; i++){
+	for(int i=0 ; i<N ; i++){
 	  printf("child %d has decrement countdown %d times\n", i, process_counter[i]);
-  }
+	}
 
+	printf("end \n");
 
-  printf("end\n");
-
-  return 0;
+	exit(0);
 }
 
 void child_process(int child_index) {
@@ -126,9 +117,6 @@ void child_process(int child_index) {
 			perror("sem_wait");
 			exit(EXIT_FAILURE);
 		}
-		//printf("child : %d start \n",child_index);
-
-
 
 		// sezione critica
 		if( *countdown > 0 ){
@@ -137,14 +125,10 @@ void child_process(int child_index) {
 
 		}
 
-
-		//printf("child : %d, end \n",child_index);
 		if (sem_post(semaphore) == -1) {
 			perror("sem_post");
 			exit(EXIT_FAILURE);
 		}
-
-
 
 		if( *shutdown != 0){
 			exit(0);
