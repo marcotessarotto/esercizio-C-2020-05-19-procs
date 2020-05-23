@@ -22,29 +22,16 @@ void err_exit(char *msg)
 
 void child(int i)
 {
-	while (1) {
-		//printf("SHUTDOWN IS %d\n", *shutdown);
+	while (!(*shutdown)) {
 		if (sem_wait(sem))
 			err_exit("sem_wait() error");
-		if (*shutdown) {
-			puts("BREAKING");
-			if (sem_post(sem))
-				err_exit("sem_post() error");
-			break;
-		} else {
-			printf("shutdown is %d\n", *shutdown);
-		}
 		if (*countdown > 0) {
-			//puts("CHILD DECREMENTING");
 			(*countdown)--;
 			process_counter[i]++;
-			//printf("countdown = %d\n", *countdown);
 		}
 		if (sem_post(sem))
 			err_exit("sem_post() error");
-		//sleep(1);
 	}
-	//puts("CHILD EXITING");
 	exit(EXIT_SUCCESS);
 }
 
@@ -55,7 +42,7 @@ int main()
 	if (map == MAP_FAILED)
 		err_exit("mmap() error");
 
-	memset(map, 0, map_size);
+	memset(map, 0, map_size); // probably not needed
 	countdown = (int *) map;
 	shutdown = countdown + 1;
 	process_counter = shutdown + 1;
@@ -76,19 +63,22 @@ int main()
 			break;
 		}
 	}
+
 	sleep(1);
+
 	if (sem_wait(sem))
 		err_exit("sem_wait() error");
-	*countdown = 100;
+
+	*countdown = 100000;
+
 	if (sem_post(sem))
 		err_exit("sem_post() error");
+
 	while (1) {
 		if (sem_wait(sem))
 			err_exit("sem_wait() error");
-		//puts("CHECKING");
 		if (!(*countdown)) {
 			*shutdown = 1;
-			puts("SHUTDOWN SET!");
 			if (sem_post(sem))
 				err_exit("sem_post() error");
 			break;
@@ -96,14 +86,15 @@ int main()
 		if (sem_post(sem))
 			err_exit("sem_post() error");
 	}
+
 	for (int i = 0; i < N; i++) {
 		if (wait(NULL) == -1)
 			err_exit("wait() error");
 	}
 
-	puts("PROC COUNTER");
-	for (int i = 0; i < N; i++) {
+	puts("process_counter array:");
+	for (int i = 0; i < N; i++)
 		printf("%d, ", process_counter[i]);
-	}
+
 	return 0;
 }
