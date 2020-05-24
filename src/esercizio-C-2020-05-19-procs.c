@@ -20,17 +20,27 @@ void err_exit(char *msg)
 	exit(EXIT_FAILURE);
 }
 
+void lock()
+{
+	if (sem_wait(sem))
+		err_exit("sem_post() error");
+}
+
+void unlock()
+{
+	if (sem_post(sem))
+		err_exit("sem_post() error");
+}
+
 void child(int i)
 {
 	while (!(*shutdown)) {
-		if (sem_wait(sem))
-			err_exit("sem_wait() error");
+		lock();
 		if (*countdown > 0) {
 			(*countdown)--;
 			process_counter[i]++;
 		}
-		if (sem_post(sem))
-			err_exit("sem_post() error");
+		unlock();
 	}
 	exit(EXIT_SUCCESS);
 }
@@ -65,26 +75,18 @@ int main()
 	}
 
 	sleep(1);
-
-	if (sem_wait(sem))
-		err_exit("sem_wait() error");
-
+	lock();
 	*countdown = 100000;
-
-	if (sem_post(sem))
-		err_exit("sem_post() error");
+	unlock();
 
 	while (1) {
-		if (sem_wait(sem))
-			err_exit("sem_wait() error");
+		lock();
 		if (!(*countdown)) {
 			*shutdown = 1;
-			if (sem_post(sem))
-				err_exit("sem_post() error");
+			unlock();
 			break;
 		}
-		if (sem_post(sem))
-			err_exit("sem_post() error");
+		unlock();
 	}
 
 	for (int i = 0; i < N; i++) {
