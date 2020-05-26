@@ -44,18 +44,14 @@ Little Book of Semaphores, pag. 55-59
 
 #define INIT_VALUE 100000
 
-typedef struct {
-	sem_t sem; // semaforo per implementare il meccanismo di mutual exclusion (mutex)
-	int val; // variabile condivisa
-} shared_int;
 
+sem_t * items; // producer-consumer
 
-shared_int * countdown;
+sem_t * start;
 
 
 int * process_counter; // int [N]
 
-int * shutdown;
 
 
 #define CHECK_ERR(a,msg) {if ((a) == -1) { perror((msg)); exit(EXIT_FAILURE); } }
@@ -68,32 +64,34 @@ int main() {
 
 	int res;
 
-	countdown = mmap(NULL, // NULL: è il kernel a scegliere l'indirizzo
-			sizeof(shared_int) + sizeof(int) * (N+1), // dimensione della memory map
+	items = mmap(NULL, // NULL: è il kernel a scegliere l'indirizzo
+			sizeof(sem_t) * 2 + sizeof(int) * (N+1), // dimensione della memory map
 			PROT_READ | PROT_WRITE, // memory map leggibile e scrivibile
 			MAP_SHARED | MAP_ANONYMOUS, // memory map condivisibile con altri processi e senza file di appoggio
 			-1, // nessun file di appoggio alla memory map
 			0); // offset nel file
-	CHECK_ERR_MMAP(countdown,"mmap")
+	CHECK_ERR_MMAP(items,"mmap")
+
+	start = items + 1;
+
+	process_counter = (int *) (items + 2);
 
 
-	process_counter = (int *) (&countdown[1]);
-
-	shutdown = &process_counter[N];
-
-	printf("sizeof(shared_int) = %ld\n", sizeof(shared_int));
-	printf("countdown = %p\n", countdown);
+	printf("items = %p\n", items);
+	printf("start = %p\n", start);
 	printf("process_counter = %p\n", process_counter);
-	printf("shutdown = %p\n", shutdown);
 	printf("\n");
 
-	printf("[parent] countdown->val initial value: %d\n", countdown->val);
+	res = sem_init(items,
+						1, // 1 => il semaforo è condiviso tra processi, 0 => il semaforo è condiviso tra threads del processo
+						INIT_VALUE // valore iniziale del semaforo
+					  );
+	CHECK_ERR(res,"sem_init")
 
-	res = sem_init(&countdown->sem,
-					1, // 1 => il semaforo è condiviso tra processi, 0 => il semaforo è condiviso tra threads del processo
-					1 // valore iniziale del semaforo (se mettiamo 0 che succede?)
-				  );
-
+	res = sem_init(start,
+						1, // 1 => il semaforo è condiviso tra processi, 0 => il semaforo è condiviso tra threads del processo
+						0 // valore iniziale del semaforo
+					  );
 	CHECK_ERR(res,"sem_init")
 
 	// voglio creare N processi figli
@@ -113,44 +111,21 @@ int main() {
 	printf("[parent] before sleep 1 second\n");
 	sleep(1);
 
-	printf("[parent] before set countdown->val=%d\n", INIT_VALUE);
-	// 3.4.2 Mutual exclusion solution, pag. 19
-	if (sem_wait(&countdown->sem) == -1) {
-		perror("sem_wait");
-		exit(EXIT_FAILURE);
-	}
-
-	countdown->val = INIT_VALUE;
-
-	if (sem_post(&countdown->sem) == -1) {
-		perror("sem_post");
-		exit(EXIT_FAILURE);
-	}
-
-	int countdown_val_copy = -1;
-	while (countdown_val_copy != 0) {
-		if (sem_wait(&countdown->sem) == -1) {
-			perror("sem_wait");
-			exit(EXIT_FAILURE);
-		}
-
-		countdown_val_copy = countdown->val;
-
-		if (countdown_val_copy == 0) {
-			*shutdown = 1; // comunichiamo a tutti i processi figli di terminare
-		}
-
-		if (sem_post(&countdown->sem) == -1) {
+	// facciamo partire tutti i processi figli
+	for (int i = 0; i < N; i++) {
+		if (sem_post(start) == -1) {
 			perror("sem_post");
 			exit(EXIT_FAILURE);
 		}
 	}
 
-	printf("[parent] after while, countdown->val=%d\n", countdown->val);
 
 	while (wait(NULL) != -1) ; // aspettiamo la terminazione di tutt i processi figli
 
-	res = sem_destroy(&countdown->sem); // ok per distruggere il semaforo
+	res = sem_destroy(items); // ok per distruggere il semaforo
+	CHECK_ERR(res,"sem_destroy")
+
+	res = sem_destroy(start); // ok per distruggere il semaforo
 	CHECK_ERR(res,"sem_destroy")
 
 	long sum = 0;
@@ -176,27 +151,22 @@ i processi figli "monitorano" continuamente countdown:
     se shutdown != 0, processo i-mo termina
  */
 
-	//printf("proc_id %d started\n", proc_id);
+	if (sem_wait(start) == -1) {
+		perror("sem_wait");
+		exit(EXIT_FAILURE);
+	}
 
-	int shutdown_copy = 0;
+	//printf("proc_id %d starts working\n", proc_id);
 
-	while (shutdown_copy == 0) {
-		if (sem_wait(&countdown->sem) == -1) {
-			perror("sem_wait");
-			exit(EXIT_FAILURE);
+	while (1) {
+
+		if (sem_trywait(items) == -1 && errno == EAGAIN) {
+			// items == 0
+			break;
 		}
 
-		if (countdown->val > 0) {
-			countdown->val--;
-			process_counter[proc_id]++;
-		}
+		process_counter[proc_id]++;
 
-		shutdown_copy = *shutdown;
-
-		if (sem_post(&countdown->sem) == -1) {
-			perror("sem_post");
-			exit(EXIT_FAILURE);
-		}
 	}
 
 	//printf("proc_id %d terminating\n", proc_id);
